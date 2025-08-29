@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ticketing System – Chat</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="navbar">
+    <div class="navwrap container">
+      <div class="brand">
+        <div class="logo"><span>TS</span></div>
+        <div>Ticketing System</div>
+      </div>
+      <nav class="navlinks">
+        <a href="index.html">Dashboard</a>
+        <a href="founder.html" id="founder-link" style="display:none;">Founder Workspace</a>
+        <a href="pro.html" id="pro-link" style="display:none;">Open Tickets</a>
+        <a href="assigned.html">Assigned Tickets</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container">
+    <div class="card" id="ticket-info">
+      <div class="ticket-header">
+        <h3 id="ticket-title">Loading...</h3>
+        <span class="chip" id="ticket-status">Loading...</span>
+      </div>
+      <div class="ticket-description" id="ticket-description">Loading...</div>
+      <div class="ticket-meta">
+        <div class="meta-row">
+          <span class="muted">Due:</span>
+          <span id="ticket-deadline">Loading...</span>
+        </div>
+        <div class="meta-row">
+          <span class="muted">Category:</span>
+          <span id="ticket-category">Loading...</span>
+        </div>
+        <div class="meta-row">
+          <span class="muted">Created by:</span>
+          <span id="ticket-founder">Loading...</span>
+        </div>
+        <div class="meta-row">
+          <span class="muted">Assigned to:</span>
+          <span id="ticket-assigned">Loading...</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card chat-container" style="margin-top:20px;">
+      <div class="chat-header">
+        <h4>Chat</h4>
+        <button class="btn ghost" onclick="refreshChat()">Refresh</button>
+      </div>
+      <div id="chat-messages" class="chat-messages"></div>
+      <form id="chat-form" class="chat-form">
+        <input 
+          id="chat-input" 
+          type="text" 
+          placeholder="Type your message..." 
+          maxlength="300" 
+          required 
+          class="chat-input"
+        >
+        <button class="btn primary" type="submit">Send</button>
+      </form>
+    </div>
+  </main>
+  
+  <script>
+const SESSION_KEY = 'ts_session';
+
+function getSession() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch { return null; }
+}
+
+const session = getSession();
+if (!session) window.location = 'auth.html';
+
+// Show appropriate navigation based on role
+if (session.role === 'founder') {
+  document.getElementById('founder-link').style.display = 'inline';
+} else if (session.role === 'professional') {
+  document.getElementById('pro-link').style.display = 'inline';
+}
+
+// Get ticket id from URL
+const urlParams = new URLSearchParams(window.location.search);
+const ticketId = urlParams.get('id');
+
+if (!ticketId) {
+  document.body.innerHTML = '<main class="container"><div class="card">Ticket ID not provided.</div></main>';
+} else {
+  let ticket = null;
+  let chatInterval = null;
+
+  // Load ticket information
+  async function loadTicket() {
+    try {
+      const res = await fetch(`http://localhost:3001/api/tickets/${ticketId}`);
+      if (!res.ok) throw new Error('Failed to fetch ticket');
+      ticket = await res.json();
+      
+      // Check if user has access to this ticket
+      if (!ticket.assignedTo || (session.username !== ticket.founder && session.username !== ticket.assignedTo)) {
+        document.body.innerHTML = '<main class="container"><div class="card">Access denied or ticket not found.</div></main>';
+        return;
+      }
+      
+      displayTicketInfo();
+      loadChatMessages();
+      
+      // Start auto-refresh for chat
+      chatInterval = setInterval(loadChatMessages, 5000);
+      
+    } catch (error) {
+      console.error('Error loading ticket:', error);
+      document.body.innerHTML = '<main class="container"><div class="card">Failed to load ticket information.</div></main>';
+    }
+  }
+
+  // Display ticket information
+  function displayTicketInfo() {
+    document.getElementById('ticket-title').textContent = ticket.title;
+    document.getElementById('ticket-description').textContent = ticket.description;
+    document.getElementById('ticket-deadline').textContent = formatDate(ticket.deadline);
+    document.getElementById('ticket-category').textContent = ticket.category || 'General';
+    document.getElementById('ticket-founder').textContent = ticket.founder;
+    document.getElementById('ticket-assigned').textContent = ticket.assignedTo;
+    
+    const statusElement = document.getElementById('ticket-status');
+    statusElement.textContent = ticket.status;
+    statusElement.className = `chip ${ticket.status.toLowerCase()}`;
+  }
+
+  // Load chat messages
+  async function loadChatMessages() {
+    try {
+      const res = await fetch(`http://localhost:3001/api/chat/${ticketId}`);
+      if (!res.ok) throw new Error('Failed to fetch chat messages');
+      const messages = await res.json();
+      displayChatMessages(messages);
+    } catch (error) {
+      console.error('Error loading chat messages:', error);
+    }
+  }
+
+  // Display chat messages
+  function displayChatMessages(messages) {
+    const chatDiv = document.getElementById('chat-messages');
+    
+    if (!messages.length) {
+      chatDiv.innerHTML = '<div class="empty">No messages yet. Start the conversation!</div>';
+      return;
+    }
+    
+    chatDiv.innerHTML = messages.map(message => `
+      <div class="chat-message ${message.user === session.username ? 'own-message' : 'other-message'}">
+        <div class="message-header">
+          <span class="message-user">${escapeHtml(message.user)}</span>
+          <span class="message-time">${formatTime(message.time)}</span>
+        </div>
+        <div class="message-text">${escapeHtml(message.text)}</div>
+      </div>
+    `).join('');
+    
+    // Scroll to bottom
+    setTimeout(() => {
+      chatDiv.scrollTop = chatDiv.scrollHeight;
+    }, 100);
+  }
+
+  // Send chat message
+  async function sendMessage(text) {
+    try {
+      const res = await fetch(`http://localhost:3001/api/chat/${ticketId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: session.username, text })
+      });
+      
+      if (!res.ok) throw new Error('Failed to send message');
+      
+      // Reload messages to show the new one
+      await loadChatMessages();
+      
+    } catch (error) {
+      console.error('Error sending message:', error);
+      alert('Failed to send message. Please try again.');
+    }
+  }
+
+  // Handle chat form submission
+  document.getElementById('chat-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    
+    if (!text) return;
+    
+    input.value = '';
+    await sendMessage(text);
+  });
+
+  // Utility functions
+  function formatDate(iso) {
+    if (!iso) return '—';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString();
+    } catch (e) {
+      return iso || '—';
+    }
+  }
+
+  function formatTime(iso) {
+    if (!iso) return '—';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleTimeString();
+    } catch (e) {
+      return iso || '—';
+    }
+  }
+
+  function escapeHtml(str) {
+    return (str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
+  }
+
+  // Refresh chat manually
+  window.refreshChat = function() {
+    loadChatMessages();
+  };
+
+  // Load ticket when page loads
+  document.addEventListener('DOMContentLoaded', loadTicket);
+
+  // Clean up interval when page unloads
+  window.addEventListener('beforeunload', function() {
+    if (chatInterval) {
+      clearInterval(chatInterval);
+    }
+  });
+}
+  </script>
+</body>
+</html>

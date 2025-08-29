@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ticketing System – Professional View</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="navbar">
+    <div class="navwrap container">
+      <div class="brand">
+        <div class="logo"><span>TS</span></div>
+        <div>Ticketing System</div>
+      </div>
+      <nav class="navlinks">
+        <a href="index.html">Dashboard</a>
+        <a href="pro.html" class="active">Open Tickets</a>
+        <a href="assigned.html">Assigned Tickets</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container">
+    <section>
+      <div class="grid">
+        <div class="col-12">
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+              <h3 style="margin:0">Open Tickets</h3>
+            </div>
+            <div id="pro-ticket-list" class="stack" style="margin-top:12px"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <div id="toast" class="toast"></div>
+  </main>
+  <script>
+const SESSION_KEY = 'ts_session';
+function getSession() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch { return null; }
+}
+const session = getSession();
+if (!session) window.location = 'auth.html';
+if (session.role !== 'professional') window.location = 'index.html';
+
+// No longer using local storage for tickets
+
+// Load professional's open tickets
+async function loadTickets() {
+  const session = getSession();
+  const res = await fetch(`http://localhost:3001/api/tickets?role=professional&expertise=${session.expertise}`);
+  return await res.json();
+}
+
+// This function is no longer needed since we're using the server API
+function formatDate(iso){ if(!iso) return '—'; try{ const d = new Date(iso + 'T00:00:00'); return d.toLocaleDateString(); }catch(e){ return iso || '—' } }
+function escapeHtml(str){
+  return (str||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
+}
+
+function ticketCard(t, idx){
+  return `
+    <div class="card ticket-card" style="cursor:pointer" onclick="showTicketDetail(${idx})">
+      <b>${escapeHtml(t.title)}</b><br>
+      ${escapeHtml(t.description).slice(0, 80)}${t.description.length>80?'…':''}<br>
+      <span class="muted">Due: ${formatDate(t.deadline)} | Category: ${escapeHtml(t.category||'')}</span>
+      <div class="muted">Created by: ${escapeHtml(t.founder || '')}</div>
+    </div>`;
+}
+
+async function renderProList(){
+  const holder = document.getElementById('pro-ticket-list');
+  
+  try {
+    const tickets = await loadTickets();
+    const filteredTickets = tickets.filter(t =>
+      t.status === 'Open' &&
+      (t.category === session.expertise || t.category === 'General')
+    );
+    
+    if(!filteredTickets.length){
+      holder.innerHTML = `<div class="empty">No open tickets right now.</div>`;
+      return;
+    }
+    
+    holder.innerHTML = filteredTickets.map((t, idx) => ticketCard(t, idx)).join('');
+    window._proTickets = filteredTickets; // for modal use
+  } catch (error) {
+    console.error('Error loading tickets:', error);
+    holder.innerHTML = `<div class="empty">Error loading tickets. Please refresh the page.</div>`;
+  }
+}
+
+window.showTicketDetail = function(idx) {
+  const tickets = window._proTickets || [];
+  const t = tickets[idx];
+  if (!t) return;
+  const applicants = (t.applicants||[]).map(a=>`<li>${escapeHtml(a)}</li>`).join('');
+  document.getElementById('ticket-modal').innerHTML = `
+    <div class="card" style="max-width:500px;margin:40px auto;position:relative;">
+      <button onclick="closeTicketModal()" style="position:absolute;top:10px;right:10px;" class="btn danger">X</button>
+      <h3>${escapeHtml(t.title)}</h3>
+      <div class="muted">Category: ${escapeHtml(t.category)} | Due: ${formatDate(t.deadline)}</div>
+      <div class="muted">Created by: ${escapeHtml(t.founder||'')}</div>
+      <p>${escapeHtml(t.description)}</p>
+      <div class="muted">Applicants: <ul>${applicants||'<li>None</li>'}</ul></div>
+      <button class="btn primary" onclick="showInterest('${t._id || t.id}')">Show Interest</button>
+    </div>
+  `;
+  document.getElementById('ticket-modal').style.display = 'block';
+};
+
+window.closeTicketModal = function() {
+  document.getElementById('ticket-modal').style.display = 'none';
+  document.getElementById('ticket-modal').innerHTML = '';
+};
+
+// Show interest (professional)
+window.showInterest = async function(ticketId) {
+  await fetch(`http://localhost:3001/api/tickets/${ticketId}/interest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: session.username })
+  });
+  alert('Interest shown!');
+  closeTicketModal();
+  renderProList();
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+  renderProList();
+  // Refresh tickets when page becomes visible
+  window.addEventListener('pageshow', renderProList);
+});
+</script>
+<div id="ticket-modal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:100;background:rgba(0,0,0,0.6);"></div>
+</body>
+</html>

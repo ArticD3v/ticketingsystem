@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Ticketing System</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="navbar">
+    <div class="navwrap container">
+      <div class="brand">
+        <div class="logo"><span>TS</span></div>
+        <div>Ticketing System</div>
+      </div>
+      <nav class="navlinks" id="navlinks"></nav>
+      <button id="logout-btn" class="btn danger right">Logout</button>
+    </div>
+  </header>
+  <main class="container">
+    <div id="founder-view" style="display:none">
+      <h2>Welcome Founder</h2>
+      <div class="card" style="margin-bottom:24px;">
+        <a href="founder.html" class="btn primary">Go to Founder Workspace</a>
+        <a href="assigned.html" class="btn">Assigned Tickets</a>
+      </div>
+    </div>
+    <div id="pro-view" style="display:none">
+      <h2>Welcome Professional</h2>
+      <div class="card" style="margin-bottom:24px;">
+        <a href="pro.html" class="btn primary">View Open Tickets</a>
+        <a href="assigned.html" class="btn">Assigned Tickets</a>
+      </div>
+    </div>
+  </main>
+  <script>
+const SESSION_KEY = 'ts_session';
+function getSession() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch { return null; }
+}
+const session = getSession();
+if (!session) window.location = 'auth.html';
+
+document.getElementById('logout-btn').onclick = function() {
+  sessionStorage.removeItem(SESSION_KEY);
+  window.location = 'auth.html';
+};
+
+const navlinks = document.getElementById('navlinks');
+if (session.role === 'founder') {
+  navlinks.innerHTML = `<a href="founder.html">Founder Workspace</a><a href="assigned.html">Assigned Tickets</a>`;
+  document.getElementById('founder-view').style.display = '';
+} else if (session.role === 'professional') {
+  navlinks.innerHTML = `<a href="pro.html">Open Tickets</a><a href="assigned.html">Assigned Tickets</a>`;
+  document.getElementById('pro-view').style.display = '';
+}
+  </script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <div class="card" style="max-width:400px;margin:40px auto;">
+      <h2>Login</h2>
+      <form id="auth-form" class="stack">
+        <label>Username <input id="username" required /></label>
+        <label>Password <input id="password" type="password" required /></label>
+        <button type="submit" class="btn primary">Login</button>
+      </form>
+      <div style="margin-top:18px;color:#b9c0ff;font-size:14px;">
+        <b>Demo Users:</b><br>
+        Founder: <code>strever / strever</code><br>
+        Pro (Tech): <code>revish / revish</code><br>
+        Pro (Legal): <code>billa / billa</code>
+      </div>
+    </div>
+  </main>
+  <script>
+const SESSION_KEY = 'ts_session';
+
+document.getElementById('auth-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const res = await fetch('http://localhost:3001/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  if (!res.ok) {
+    alert('Invalid username or password!');
+    return;
+  }
+  const user = await res.json();
+  sessionStorage.setItem('ts_session', JSON.stringify(user));
+  window.location = 'index.html';
+});
+
+// If already logged in, redirect
+try {
+  const session = JSON.parse(sessionStorage.getItem(SESSION_KEY));
+  if (session) window.location = 'index.html';
+} catch {}
+  </script>
+</body>
+</html>

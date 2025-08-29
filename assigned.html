@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ticketing System – Assigned Tickets</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="navbar">
+    <div class="navwrap container">
+      <div class="brand">
+        <div class="logo"><span>TS</span></div>
+        <div>Ticketing System</div>
+      </div>
+      <nav class="navlinks">
+        <a href="index.html">Dashboard</a>
+        <a href="founder.html" id="founder-link" style="display:none;">Founder Workspace</a>
+        <a href="pro.html" id="pro-link" style="display:none;">Open Tickets</a>
+        <a href="assigned.html" class="active">Assigned Tickets</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container">
+    <div class="card">
+      <h3>Assigned Tickets</h3>
+      <div id="assigned-list" class="stack"></div>
+    </div>
+  </main>
+  <script>
+const SESSION_KEY = 'ts_session';
+
+function getSession() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch { return null; }
+}
+
+const session = getSession();
+if (!session) window.location = 'auth.html';
+
+// Show appropriate navigation based on role
+if (session.role === 'founder') {
+  document.getElementById('founder-link').style.display = 'inline';
+} else if (session.role === 'professional') {
+  document.getElementById('pro-link').style.display = 'inline';
+}
+
+// Load assigned tickets from server
+async function loadAssignedTickets() {
+  try {
+    const res = await fetch(`http://localhost:3001/api/assigned?role=${session.role}&username=${session.username}`);
+    if (!res.ok) throw new Error('Failed to fetch assigned tickets');
+    return await res.json();
+  } catch (error) {
+    console.error('Error loading assigned tickets:', error);
+    return [];
+  }
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString();
+  } catch (e) {
+    return iso || '—';
+  }
+}
+
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
+}
+
+async function renderAssignedTickets() {
+  const list = document.getElementById('assigned-list');
+  
+  try {
+    const tickets = await loadAssignedTickets();
+    
+    if (!tickets.length) {
+      list.innerHTML = '<div class="empty">No assigned tickets found.</div>';
+      return;
+    }
+    
+    list.innerHTML = tickets.map(ticket => `
+      <div class="card ticket-card">
+        <div class="ticket-header">
+          <h4>${escapeHtml(ticket.title)}</h4>
+          <span class="chip ${ticket.status.toLowerCase()}">${ticket.status}</span>
+        </div>
+        <div class="ticket-description">
+          ${escapeHtml(ticket.description)}
+        </div>
+        <div class="ticket-meta">
+          <div class="meta-row">
+            <span class="muted">Due:</span>
+            <span>${formatDate(ticket.deadline)}</span>
+          </div>
+          <div class="meta-row">
+            <span class="muted">Category:</span>
+            <span>${escapeHtml(ticket.category || 'General')}</span>
+          </div>
+          <div class="meta-row">
+            <span class="muted">Created by:</span>
+            <span>${escapeHtml(ticket.founder)}</span>
+          </div>
+          <div class="meta-row">
+            <span class="muted">Assigned to:</span>
+            <span>${escapeHtml(ticket.assignedTo)}</span>
+          </div>
+          <div class="meta-row">
+            <span class="muted">Created:</span>
+            <span>${formatDate(ticket.createdAt)}</span>
+          </div>
+        </div>
+        <div class="ticket-actions">
+          <a class="btn primary" href="chat.html?id=${ticket._id}">Open Chat</a>
+          ${session.role === 'founder' ? 
+            `<button class="btn success" onclick="markAsCompleted('${ticket._id}')">Mark Complete</button>` : 
+            ''
+          }
+        </div>
+      </div>
+    `).join('');
+    
+  } catch (error) {
+    console.error('Error rendering assigned tickets:', error);
+    list.innerHTML = '<div class="empty">Error loading assigned tickets. Please refresh the page.</div>';
+  }
+}
+
+// Mark ticket as completed (founder only)
+async function markAsCompleted(ticketId) {
+  if (session.role !== 'founder') return;
+  
+  if (confirm('Mark this ticket as completed?')) {
+    try {
+      const res = await fetch(`http://localhost:3001/api/tickets/${ticketId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (res.ok) {
+        alert('Ticket marked as completed!');
+        renderAssignedTickets();
+      } else {
+        alert('Failed to mark ticket as completed.');
+      }
+    } catch (error) {
+      console.error('Error marking ticket as completed:', error);
+      alert('Failed to mark ticket as completed.');
+    }
+  }
+}
+
+// Make function globally available
+window.markAsCompleted = markAsCompleted;
+
+document.addEventListener('DOMContentLoaded', function() {
+  renderAssignedTickets();
+  
+  // Refresh tickets every 30 seconds
+  setInterval(renderAssignedTickets, 30000);
+});
+  </script>
+</body>
+</html>

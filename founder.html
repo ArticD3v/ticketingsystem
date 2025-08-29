@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ticketing System – Founder View</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="navbar">
+    <div class="navwrap container">
+      <div class="brand">
+        <div class="logo"><span>TS</span></div>
+        <div>Ticketing System</div>
+      </div>
+      <nav class="navlinks">
+        <a href="index.html">Dashboard</a>
+        <a href="founder.html" class="active">Founder Workspace</a>
+        <a href="assigned.html">Assigned Tickets</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container">
+    <section>
+      <div class="grid">
+        <div class="col-6">
+          <div class="card">
+            <h3>Create a New Ticket</h3>
+            <form id="ticket-form" class="stack">
+              <div>
+                <label for="title">Title</label>
+                <input id="title" type="text" required maxlength="60" placeholder="e.g., Draft Partnership Agreement" />
+              </div>
+              <div>
+                <label for="description">Description</label>
+                <textarea id="description" required maxlength="300" placeholder="Describe the task and context"></textarea>
+              </div>
+              <div class="row">
+                <div class="w-50">
+                  <label for="deadline">Deadline</label>
+                  <input id="deadline" type="date" min="" />
+                </div>
+                <div class="w-50">
+                  <label for="category">Category</label>
+                  <select id="category">
+                    <option>General</option>
+                    <option>Tech</option>
+                    <option>Legal</option>
+                    <option>Marketing</option>
+                    <option>Finance</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+              </div>
+              <div class="row">
+                <button type="submit" class="btn primary">Create Ticket</button>
+                <button type="button" id="clear-all" class="btn ghost danger">Clear All Tickets</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+              <h3 style="margin:0">Your Tickets</h3>
+              <div class="toolbar">
+                <select id="filter-status" title="Filter by status">
+                  <option value="all">All</option>
+                  <option value="Open">Open</option>
+                  <option value="Assigned">Assigned</option>
+                  <option value="Closed">Closed</option>
+                </select>
+              </div>
+            </div>
+            <div id="founder-ticket-list" class="stack" style="margin-top:12px"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <div id="toast" class="toast"></div>
+  </main>
+  <script>
+const SESSION_KEY = 'ts_session';
+function getSession() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch { return null; }
+}
+const session = getSession();
+if (!session) window.location = 'auth.html';
+if (session.role !== 'founder') window.location = 'index.html';
+
+// No longer using local storage for tickets
+
+// Load founder's tickets
+async function loadTickets() {
+  const session = getSession();
+  try {
+    const res = await fetch(`http://localhost:3001/api/tickets?role=founder&username=${session.username}`);
+    if (!res.ok) throw new Error('Failed to fetch tickets');
+    return await res.json();
+  } catch (error) {
+    console.error('Error loading tickets:', error);
+    return [];
+  }
+}
+
+// Create ticket (founder)
+async function createTicket(ticket) {
+  try {
+    const res = await fetch('http://localhost:3001/api/tickets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ticket)
+    });
+    if (!res.ok) throw new Error('Failed to create ticket');
+    return await res.json();
+  } catch (error) {
+    console.error('Error creating ticket:', error);
+    throw error;
+  }
+}
+
+// Assign ticket (founder)
+async function assignTicketToUser(ticketId, username) {
+  try {
+    const res = await fetch(`http://localhost:3001/api/tickets/${ticketId}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username })
+    });
+    if (!res.ok) throw new Error('Failed to assign ticket');
+    return await res.json();
+  } catch (error) {
+    console.error('Error assigning ticket:', error);
+    throw error;
+  }
+}
+
+// These functions are no longer needed since we're using the server API
+function formatDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString();
+  } catch (e) {
+    return iso || '—';
+  }
+}
+function escapeHtml(str){
+  return (str||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
+}
+
+async function renderFounderList(){
+  const holder = document.getElementById('founder-ticket-list');
+  const filter = document.getElementById('filter-status').value;
+  
+  try {
+    let tickets = await loadTickets();
+    tickets = tickets.filter(t => t.founder === session.username);
+    if (filter !== 'all') tickets = tickets.filter(t => t.status === filter);
+    
+    if(!tickets.length){
+      holder.innerHTML = `<div class="empty">No tickets yet. Create one on the left.</div>`;
+      return;
+    }
+    
+    holder.innerHTML = tickets.map((t, idx) => {
+      let applicants = (t.applicants||[]).length
+        ? `<ul style="margin:4px 0 0 0;padding-left:18px;">${
+            t.applicants.map(a=>
+              `<li>${escapeHtml(a)}${
+                !t.assignedTo ? 
+                  ` <button class="btn success" style="padding:2px 8px;font-size:12px" onclick="assignTicket('${t._id || t.id}','${a}')">Assign</button>` 
+                  : (t.assignedTo === a ? ' <span class="chip assigned">Assigned</span>' : '')
+              }</li>`
+            ).join('')
+          }</ul>`
+        : '<span class="muted">No applicants yet.</span>';
+      return `
+        <div class="card ticket-card">
+          <b>${escapeHtml(t.title)}</b><br>
+          <div>${escapeHtml(t.description)}</div>
+          <div class="muted">Due: ${formatDate(t.deadline)} | Category: ${escapeHtml(t.category||'')}</div>
+          <div class="muted">Applicants: ${applicants}</div>
+          <div class="muted">Assigned to: ${escapeHtml(t.assignedTo||'—')}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (error) {
+    console.error('Error rendering tickets:', error);
+    holder.innerHTML = `<div class="empty">Error loading tickets. Please refresh the page.</div>`;
+  }
+}
+
+// Assign ticket function (lock after assignment)
+window.assignTicket = async function(ticketId, username) {
+  try {
+    await assignTicketToUser(ticketId, username);
+    renderFounderList();
+    alert('Ticket assigned to ' + username);
+  } catch (error) {
+    alert('Failed to assign ticket. Please try again.');
+    console.error('Error assigning ticket:', error);
+  }
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+  renderFounderList();
+  document.getElementById('ticket-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const title = document.getElementById('title').value.trim().slice(0, 60);
+    const description = document.getElementById('description').value.trim().slice(0, 300);
+    const deadline = document.getElementById('deadline').value;
+    const category = document.getElementById('category').value;
+    if(!title || !description){ alert('Please fill in title & description'); return }
+    
+    try {
+      const newTicket = {
+        title,
+        description,
+        deadline,
+        category,
+        status: 'Open',
+        applicants: [],
+        assignedTo: null,
+        founder: session.username
+      };
+      
+      await createTicket(newTicket);
+      e.target.reset();
+      renderFounderList();
+      alert('Ticket created successfully!');
+    } catch (error) {
+      alert('Failed to create ticket. Please try again.');
+      console.error('Error creating ticket:', error);
+    }
+  });
+  document.getElementById('clear-all').onclick = async function() {
+    if (confirm('Clear all your tickets?')) {
+      try {
+        // Note: This would require a DELETE endpoint on the server
+        // For now, we'll just show a message
+        alert('Clear all functionality requires server-side implementation. Please contact the administrator.');
+      } catch (error) {
+        console.error('Error clearing tickets:', error);
+      }
+    }
+  };
+  document.getElementById('filter-status').onchange = renderFounderList;
+  // Set min and max date for deadline input (today to 1 year from today)
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const minDate = `${yyyy}-${mm}-${dd}`;
+  const maxDateObj = new Date(today);
+  maxDateObj.setFullYear(today.getFullYear() + 1);
+  const maxyyyy = maxDateObj.getFullYear();
+  const maxmm = String(maxDateObj.getMonth() + 1).padStart(2, '0');
+  const maxdd = String(maxDateObj.getDate()).padStart(2, '0');
+  const maxDate = `${maxyyyy}-${maxmm}-${maxdd}`;
+  const deadlineInput = document.getElementById('deadline');
+  deadlineInput.min = minDate;
+  deadlineInput.max = maxDate;
+});
+  </script>
+</body>
+</html>
